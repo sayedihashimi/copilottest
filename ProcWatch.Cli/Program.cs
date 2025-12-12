@@ -103,5 +103,5 @@ return await handler.ExecuteAsync(
     intervalMs,
     maxEvents,
     !noChildren,
-    noConsole);
+    !noConsole);  // Fixed: invert noConsole to get showConsole
 

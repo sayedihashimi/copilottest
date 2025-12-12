@@ -6,8 +6,8 @@ A Windows-only process monitoring tool built with .NET 10 and Aspire 13 that cap
 
 - **Process Tree Tracking**: Monitor a target process and all its child processes
 - **ETW Event Capture**: Uses Event Tracing for Windows (ETW) to capture:
-  - File read/write operations
-  - Registry operations
+  - File operations: read, write, create, delete
+  - Registry operations: open, create, delete, query, set value, query value, enumerate keys
   - DLL/module loads
   - Process lifecycle events
 - **System Statistics**: Periodic sampling of:

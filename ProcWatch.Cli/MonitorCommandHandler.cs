@@ -78,6 +78,9 @@ public class MonitorCommandHandler
             // Start dashboard if console is enabled
             if (showConsole)
             {
+                // Wait a moment for the database to be initialized by MigrationService
+                await Task.Delay(1500);
+                
                 dashboardCts = new CancellationTokenSource();
                 dashboardTask = RunDashboardAsync(dbPath, dashboardCts.Token);
             }

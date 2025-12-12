@@ -59,8 +59,16 @@ public class EtwMonitor : IDisposable
             // Subscribe to events
             _session.Source.Kernel.FileIORead += OnFileIORead;
             _session.Source.Kernel.FileIOWrite += OnFileIOWrite;
+            _session.Source.Kernel.FileIOCreate += OnFileIOCreate;
+            _session.Source.Kernel.FileIODelete += OnFileIODelete;
             _session.Source.Kernel.RegistryOpen += OnRegistryOpen;
+            _session.Source.Kernel.RegistryCreate += OnRegistryCreate;
+            _session.Source.Kernel.RegistryDelete += OnRegistryDelete;
+            _session.Source.Kernel.RegistryQuery += OnRegistryQuery;
             _session.Source.Kernel.RegistrySetValue += OnRegistrySetValue;
+            _session.Source.Kernel.RegistryQueryValue += OnRegistryQueryValue;
+            _session.Source.Kernel.RegistryEnumerateKey += OnRegistryEnumerateKey;
+            _session.Source.Kernel.RegistryEnumerateValueKey += OnRegistryEnumerateValueKey;
             _session.Source.Kernel.ImageLoad += OnImageLoad;
 
             _processingTask = Task.Run(() => _session.Source.Process(), _cts.Token);
@@ -126,6 +134,42 @@ public class EtwMonitor : IDisposable
         }
     }
 
+    private void OnFileIOCreate(FileIOCreateTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "File",
+                Op = "Create",
+                Path = data.FileName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnFileIODelete(FileIOInfoTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "File",
+                Op = "Delete",
+                Path = data.FileName,
+                Source = "ETW"
+            });
+        }
+    }
+
     private void OnRegistryOpen(RegistryTraceData data)
     {
         if (_processTracker.IsTracked(data.ProcessID))
@@ -156,6 +200,114 @@ public class EtwMonitor : IDisposable
                 Timestamp = data.TimeStamp.ToUniversalTime(),
                 Type = "Registry",
                 Op = "SetValue",
+                Path = data.KeyName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnRegistryCreate(RegistryTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Registry",
+                Op = "Create",
+                Path = data.KeyName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnRegistryDelete(RegistryTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Registry",
+                Op = "Delete",
+                Path = data.KeyName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnRegistryQuery(RegistryTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Registry",
+                Op = "Query",
+                Path = data.KeyName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnRegistryQueryValue(RegistryTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Registry",
+                Op = "QueryValue",
+                Path = data.KeyName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnRegistryEnumerateKey(RegistryTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Registry",
+                Op = "EnumerateKey",
+                Path = data.KeyName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnRegistryEnumerateValueKey(RegistryTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Registry",
+                Op = "EnumerateValueKey",
                 Path = data.KeyName,
                 Source = "ETW"
             });
