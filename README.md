@@ -6,7 +6,8 @@ A Windows-only process monitoring tool built with .NET 10 and Aspire 13 that cap
 
 - **Process Tree Tracking**: Monitor a target process and all its child processes
 - **ETW Event Capture**: Uses Event Tracing for Windows (ETW) to capture:
-  - File operations: read, write, create, delete
+  - File operations: read, write, create, delete, file create, file delete, name mapping
+  - Disk I/O operations: read, write at disk level
   - Registry operations: open, create, delete, query, set value, query value, enumerate keys
   - DLL/module loads
   - Process lifecycle events
@@ -83,7 +84,7 @@ Press **Ctrl+C** to gracefully stop monitoring. The tool will:
   - ProcessTreeTracker: WMI-based process discovery
   - StatsSampler: Periodic CPU/memory/handle/thread sampling
   - EventIngestor: Channel-based batched writes to database
-  - EtwMonitor: TraceEvent-based ETW capture
+  - EtwMonitor: TraceEvent-based ETW capture with FileIO, FileIOInit, DiskFileIO, Registry, ImageLoad, and Process keywords
   - Worker: Main orchestration service
 - **ProcWatch.Cli**: Command-line interface with Spectre.Console dashboard
 

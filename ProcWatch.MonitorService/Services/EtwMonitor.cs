@@ -50,17 +50,30 @@ public class EtwMonitor : IDisposable
             _session = new TraceEventSession(sessionName);
             
             // CRITICAL: Combine all keywords in single EnableKernelProvider call
+            // Use FileIOInit and DiskFileIO for more comprehensive file tracking
             _session.EnableKernelProvider(
                 KernelTraceEventParser.Keywords.FileIO |
+                KernelTraceEventParser.Keywords.FileIOInit |
+                KernelTraceEventParser.Keywords.DiskFileIO |
                 KernelTraceEventParser.Keywords.Registry |
                 KernelTraceEventParser.Keywords.ImageLoad |
                 KernelTraceEventParser.Keywords.Process);
 
             // Subscribe to events
+            // File I/O events - subscribe to multiple event types for comprehensive coverage
             _session.Source.Kernel.FileIORead += OnFileIORead;
             _session.Source.Kernel.FileIOWrite += OnFileIOWrite;
             _session.Source.Kernel.FileIOCreate += OnFileIOCreate;
             _session.Source.Kernel.FileIODelete += OnFileIODelete;
+            _session.Source.Kernel.FileIOFileCreate += OnFileIOFileCreate;
+            _session.Source.Kernel.FileIOFileDelete += OnFileIOFileDelete;
+            _session.Source.Kernel.FileIOName += OnFileIOName;
+            
+            // Disk I/O events for more comprehensive tracking
+            _session.Source.Kernel.DiskIORead += OnDiskIORead;
+            _session.Source.Kernel.DiskIOWrite += OnDiskIOWrite;
+            
+            // Registry events
             _session.Source.Kernel.RegistryOpen += OnRegistryOpen;
             _session.Source.Kernel.RegistryCreate += OnRegistryCreate;
             _session.Source.Kernel.RegistryDelete += OnRegistryDelete;
@@ -69,11 +82,14 @@ public class EtwMonitor : IDisposable
             _session.Source.Kernel.RegistryQueryValue += OnRegistryQueryValue;
             _session.Source.Kernel.RegistryEnumerateKey += OnRegistryEnumerateKey;
             _session.Source.Kernel.RegistryEnumerateValueKey += OnRegistryEnumerateValueKey;
+            
+            // Image load events
             _session.Source.Kernel.ImageLoad += OnImageLoad;
 
             _processingTask = Task.Run(() => _session.Source.Process(), _cts.Token);
             
-            _logger.LogInformation("ETW monitoring started");
+            _logger.LogInformation("ETW monitoring started with FileIO, FileIOInit, DiskFileIO, Registry, ImageLoad, Process keywords");
+            LogSystemEvent("ETW monitoring started - subscribed to file I/O, registry, and image load events");
             return true;
         }
         catch (Exception ex)
@@ -165,6 +181,96 @@ public class EtwMonitor : IDisposable
                 Type = "File",
                 Op = "Delete",
                 Path = data.FileName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnFileIOFileCreate(FileIONameTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "File",
+                Op = "FileCreate",
+                Path = data.FileName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnFileIOFileDelete(FileIONameTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "File",
+                Op = "FileDelete",
+                Path = data.FileName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnFileIOName(FileIONameTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "File",
+                Op = "Name",
+                Path = data.FileName,
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnDiskIORead(DiskIOTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Disk",
+                Op = "Read",
+                Path = $"Disk{data.DiskNumber} Offset:{data.ByteOffset} Size:{data.TransferSize}",
+                Source = "ETW"
+            });
+        }
+    }
+
+    private void OnDiskIOWrite(DiskIOTraceData data)
+    {
+        if (_processTracker.IsTracked(data.ProcessID))
+        {
+            EnqueueEvent(new EventRecord
+            {
+                SessionId = _sessionId,
+                Pid = data.ProcessID,
+                ProcessName = data.ProcessName ?? "Unknown",
+                Timestamp = data.TimeStamp.ToUniversalTime(),
+                Type = "Disk",
+                Op = "Write",
+                Path = $"Disk{data.DiskNumber} Offset:{data.ByteOffset} Size:{data.TransferSize}",
                 Source = "ETW"
             });
         }
