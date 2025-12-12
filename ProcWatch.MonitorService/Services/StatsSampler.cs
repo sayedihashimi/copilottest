@@ -155,7 +155,16 @@ public class StatsSampler : IDisposable
     {
         _cts?.Cancel();
         _timer?.Dispose();
-        _samplingTask?.Wait(TimeSpan.FromSeconds(5));
+        
+        // Use try-catch for task completion to avoid blocking indefinitely
+        try
+        {
+            _samplingTask?.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException)
+        {
+            // Task was cancelled, which is expected
+        }
         
         lock (_lock)
         {

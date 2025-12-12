@@ -182,14 +182,18 @@ public class EtwMonitor : IDisposable
 
     private void EnqueueEvent(EventRecord eventRecord)
     {
-        try
+        // Fire-and-forget pattern to avoid blocking ETW callbacks
+        _ = Task.Run(async () =>
         {
-            _eventIngestor.EnqueueEventRecordAsync(eventRecord, _cts?.Token ?? CancellationToken.None).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to enqueue event");
-        }
+            try
+            {
+                await _eventIngestor.EnqueueEventRecordAsync(eventRecord, _cts?.Token ?? CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to enqueue event");
+            }
+        });
     }
 
     private void LogSystemEvent(string message)
