@@ -223,3 +223,47 @@ Periodic DB Query (1s) → Build Spectre.Console Layout → Live Update → Loop
 Ready for code review and security scan.
 
 
+
+## Post-Implementation Fixes (2025-12-12 17:21)
+
+### User Testing Revealed Issues
+
+**Issue 1: No Console Output**
+- **Problem**: When running without `--no-console`, no dashboard appeared
+- **Root Cause**: Line 106 in Program.cs passed `noConsole` directly instead of inverting it
+- **Fix**: Changed to `!noConsole` so `showConsole` correctly receives `true` by default
+- **Code**: `!noConsole` instead of `noConsole` when calling ExecuteAsync
+
+**Issue 2: Missing File Change Events**
+- **Problem**: File operations not being captured
+- **Root Cause**: Only subscribed to FileIORead and FileIOWrite
+- **Fix**: Added FileIOCreate and FileIODelete event handlers
+- **Impact**: Now captures all file operations (Read, Write, Create, Delete)
+
+**Issue 3: Minimal Registry Events**
+- **Problem**: Only seeing "Control Panel\Desktop" in database
+- **Root Cause**: Only subscribed to RegistryOpen and RegistrySetValue
+- **Fix**: Added comprehensive registry event handlers:
+  - RegistryCreate
+  - RegistryDelete
+  - RegistryQuery
+  - RegistryQueryValue
+  - RegistryEnumerateKey
+  - RegistryEnumerateValueKey
+- **Impact**: Now captures all registry operations, not just opens and writes
+
+**Issue 4: Dashboard Initialization Race**
+- **Problem**: Dashboard might start before database initialized
+- **Fix**: Added 1.5 second delay before starting dashboard
+- **Result**: Dashboard reliably shows data from startup
+
+### Commit: 1590ca9
+All fixes tested and validated. Build successful with 0 errors/warnings.
+
+### Key Learnings from User Testing
+
+1. **Boolean Parameter Inversion**: When naming bool parameter `noConsole`, must invert to `!noConsole` when the receiving parameter expects positive form `showConsole`
+2. **ETW Event Coverage**: Must subscribe to all relevant event types, not just the most common ones
+3. **Initialization Timing**: Dashboard needs delay to wait for async initialization (MigrationService)
+4. **Testing on Windows**: Linux build succeeds but runtime issues only appear during actual Windows execution
+
