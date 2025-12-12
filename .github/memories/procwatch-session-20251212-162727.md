@@ -267,3 +267,59 @@ All fixes tested and validated. Build successful with 0 errors/warnings.
 3. **Initialization Timing**: Dashboard needs delay to wait for async initialization (MigrationService)
 4. **Testing on Windows**: Linux build succeeds but runtime issues only appear during actual Windows execution
 
+
+## Additional File Event Fix (2025-12-12 17:45)
+
+### Issue: File Events Still Not Being Captured
+
+**Problem**: User reported "it's not picking up file events" even after initial fix
+**Root Cause Analysis**: 
+- Only had FileIO keyword enabled, missing FileIOInit and DiskFileIO
+- Missing critical FileIOName event which maps file handles to paths
+- Missing FileIOFileCreate and FileIOFileDelete which are the actual file creation/deletion events
+- No disk-level I/O tracking
+
+**Solution (Commit 176c4e0)**:
+
+1. **Enhanced ETW Keywords**:
+   - Added `FileIOInit` keyword - enables file initialization events
+   - Added `DiskFileIO` keyword - enables disk-level I/O operations
+   - Now using: FileIO | FileIOInit | DiskFileIO | Registry | ImageLoad | Process
+
+2. **Added Critical Event Handlers**:
+   - `FileIOFileCreate` - captures actual file creation (different from FileIOCreate)
+   - `FileIOFileDelete` - captures actual file deletion (different from FileIODelete)
+   - `FileIOName` - maps file handles to file paths (CRITICAL for path resolution)
+   - `DiskIORead` - captures disk-level read operations
+   - `DiskIOWrite` - captures disk-level write operations
+
+3. **Total File Event Coverage**:
+   - FileIORead, FileIOWrite (basic I/O)
+   - FileIOCreate, FileIODelete (file system ops)
+   - FileIOFileCreate, FileIOFileDelete (actual file create/delete)
+   - FileIOName (handle-to-path mapping)
+   - DiskIORead, DiskIOWrite (disk-level)
+   - = 9 event handlers for comprehensive file tracking
+
+4. **Improved Logging**:
+   - Added startup message listing all active ETW keywords
+   - System event logged when ETW monitoring starts
+
+### Key Learning: ETW FileIO Event Types
+
+**FileIO vs FileIOFileCreate**:
+- `FileIOCreate` - I/O create operation (opening file)
+- `FileIOFileCreate` - Actual file creation on disk
+- Both are needed for complete coverage
+
+**FileIOName is Critical**:
+- Without FileIOName, file handles may not resolve to paths correctly
+- This event associates a file handle with its actual file path
+- Essential for meaningful file tracking
+
+**Multiple Keyword Layers**:
+- FileIO - basic file I/O operations
+- FileIOInit - file initialization and setup
+- DiskFileIO - physical disk operations
+- All three needed for comprehensive coverage
+
