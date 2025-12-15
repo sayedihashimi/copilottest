@@ -1,179 +1,231 @@
-WHAT ASPIRE 13 IS (CRITICAL CONTEXT)
+# aspire-13-instructions.md
 
-- Aspire 13 is a polyglot application platform, not just “.NET Aspire”.
-- It supports first-class orchestration for:
-  - .NET
-  - JavaScript (Vite)
-  - Python
-- Aspire 13 favors file-based AppHosts instead of .csproj-based AppHosts.
-- Build, publish, and deploy workflows are driven by pipelines via `aspire do`.
+This file exists to teach LLMs how to correctly build, modify, and reason about
+Aspire 13 applications. Aspire 13 is new, evolving, and not well-represented in
+most model training data, so the rules below must be followed exactly.
 
-LLMs trained before Aspire 13 often get this wrong by:
-- Assuming Aspire is .NET-only
-- Assuming AppHosts must be .csproj-based
-- Using obsolete publish or deployment patterns
+Assume this file is authoritative over general Aspire/.NET knowledge.
 
-This file exists to correct those assumptions.
+--------------------------------------------------------------------
 
-======================================================================
+WHAT ASPIRE 13 IS (MENTAL MODEL)
 
-APPHOST: PREFERRED FILE-BASED STRUCTURE
+- Aspire 13 is an application orchestration platform, not just a .NET library.
+- It coordinates:
+  - .NET services
+  - JavaScript (Vite) frontends
+  - Databases
+  - Containers
+  - Local and production deployments
+- Aspire owns wiring, configuration, lifecycle, and deployment shape.
+- Individual services own their internal implementation.
 
-Use a file-based AppHost whenever possible.
+Aspire 13 introduces:
+- Polyglot first-class support (JavaScript via Aspire.Hosting.JavaScript)
+- Pipeline-based build/deploy using `aspire do`
+- Strong conventions around references instead of manual configuration
 
-Example header:
+--------------------------------------------------------------------
 
-    #:sdk Aspire.AppHost.Sdk@13.0.0
-    #:package Aspire.Hosting.SqlServer@13.0.0
-    #:package Aspire.Hosting.JavaScript@13.0.0
+APPHOST FORMAT (CRITICAL: VISUAL STUDIO COMPATIBILITY)
 
-    var builder = DistributedApplication.CreateBuilder(args);
+DEFAULT RULE (MUST FOLLOW)
 
-There is no .csproj required for a file-based AppHost.
+- Always use a project-based AppHost (.csproj) by default.
+- Assume the user is using Visual Studio.
 
-======================================================================
+Why:
+- Single-file AppHosts (apphost.cs using #:sdk / #:package) do NOT work correctly
+  in Visual Studio.
+- Visual Studio tooling expects .csproj files for restore, build, debug, and
+  design-time services.
 
-CORE APPHOST PRIMITIVES (USE CONSISTENTLY)
+SINGLE-FILE APPHOST (EXPLICIT OPT-IN ONLY)
 
-- DistributedApplication.CreateBuilder(args)
-- AddProject(...)               -> .NET services
-- AddViteApp(...)               -> Vite frontends
-- AddSqlServer(...), AddDatabase(...) -> infrastructure
-- WithReference(...)            -> dependency wiring + config injection
-- WaitFor(...)                  -> startup ordering
-- WithExternalHttpEndpoints()   -> expose endpoints outside Aspire network
-- WithHttpHealthCheck(...)      -> health checks
+- Only use a single-file AppHost if the user explicitly asks for it.
+- Never infer or assume this format.
 
-Avoid inventing custom patterns unless absolutely necessary.
+Explicit opt-in phrases include:
+- "Use a single-file AppHost"
+- "Use apphost.cs"
+- "Use the file-based AppHost"
+- "Prefer the single-file Aspire AppHost format"
 
-======================================================================
+DECISION RULE
 
-EXAMPLE: API + SQL SERVER + VITE FRONTEND
+If the user does NOT explicitly request a single-file AppHost:
+- Use a project-based AppHost (.csproj)
 
-    var sql = builder.AddSqlServer("todosqlserver")
-                     .WithLifetime(ContainerLifetime.Persistent);
+--------------------------------------------------------------------
 
-    var db = sql.AddDatabase("tododb");
+CANONICAL APPHOST PATTERNS (ASPIRE 13)
 
-    var api = builder.AddProject("apiservice", "../src/My.ApiService")
-                     .WithReference(db)
-                     .WaitFor(db)
-                     .WithHttpHealthCheck("/health");
+- Every AppHost must:
+  - Call DistributedApplication.CreateBuilder(args)
+  - Add resources (projects, databases, frontends)
+  - Wire dependencies using references
+  - Call builder.Build().Run()
 
-    var web = builder.AddViteApp("web", "../src/my-frontend")
-                     .WithReference(api)
-                     .WaitFor(api)
-                     .WithExternalHttpEndpoints();
+DEPENDENCY WIRING
 
-    api.PublishWithContainerFiles(web, "./wwwroot");
+- Use .WithReference(...) to connect services.
+- Do NOT manually pass:
+  - connection strings
+  - ports
+  - hostnames
+- Aspire injects configuration automatically based on references.
 
-    builder.Build().Run();
+STARTUP ORDERING
 
-Important notes:
-- The database name ("tododb") is critical.
-- Aspire injects ConnectionStrings:tododb automatically.
-- Consumers must use the same name.
+- Use .WaitFor(...) when startup order matters.
+- Common cases:
+  - API waits for database
+  - Frontend waits for API
 
-======================================================================
+--------------------------------------------------------------------
 
-EF CORE IN ASPIRE 13 (THE CORRECT MODEL)
+JAVASCRIPT / VITE FRONTEND RULES
 
-Key rule:
-- EF Core is configured in the consuming service, NOT in the AppHost.
-- The AppHost owns the database resource.
-- The service owns EF Core configuration.
+- Use Aspire.Hosting.JavaScript.
+- Use AddViteApp(...) for Vite-based frontends.
+- Frontends typically require:
+  - WithExternalHttpEndpoints()
+  - WithReference(apiService)
+  - WaitFor(apiService)
 
-Recommended default:
+PRODUCTION FRONTEND PATTERN (FROM REAL REPO)
 
-    builder.AddSqlServerDbContext<TodoDbContext>("tododb");
+- Bundle frontend output into the API container:
+  - api.PublishWithContainerFiles(web, "./wwwroot")
+- This produces a single deployable container serving API and static files.
 
-This:
-- Pulls the connection string by name
-- Enables pooling, tracing, and health checks by default
+--------------------------------------------------------------------
 
-Use standard AddDbContext / AddDbContextPool only when you need full control.
+DATABASE + EF CORE (ASPIRE 13 WAY)
 
-======================================================================
+SEPARATION OF RESPONSIBILITIES
 
-EF CORE MIGRATIONS (PROVEN PATTERN)
+- AppHost:
+  - Defines database resources
+  - Names them
+  - Controls lifetime and persistence
+- Consuming services:
+  - Configure EF Core
+  - Own DbContext behavior
 
-Recommended approach:
-- Create a dedicated MigrationService (worker).
-- Reference the shared DbContext project.
-- Register the DbContext using AddSqlServerDbContext("tododb").
-- Run context.Database.Migrate() on startup.
+PREFERRED EF REGISTRATION (HAPPY PATH)
 
-Lessons learned from todojsaspire:
-- appsettings.json and launchSettings.json in the MigrationService can break
-  `aspire do publish`.
-- Removing those files fixed pipeline failures.
-- Keep migration services minimal and configuration-free.
+In consuming services (API, worker, migration service):
 
-======================================================================
+builder.AddSqlServerDbContext<TodoDbContext>("tododb");
 
-ASPIRE PIPELINES (aspire do)
+- The string name MUST match the database resource name in the AppHost.
+- Aspire provides connection strings, pooling, diagnostics, and health checks.
 
-Aspire 13 replaces older publish/deploy patterns with pipelines.
+--------------------------------------------------------------------
 
-Common commands:
-- aspire run
-- aspire do build
+EF CORE MIGRATIONS (REQUIRED PATTERN)
+
+- Use a dedicated MigrationService.
+- Do NOT run migrations inside the API.
+
+MIGRATIONSERVICE RULES (PROVEN IN PRACTICE)
+
+- Reference the shared DbContext/data project.
+- Register EF using AddSqlServerDbContext.
+- Run context.Database.Migrate() at startup.
+
+CRITICAL GOTCHA
+
+- Do NOT include:
+  - appsettings.json
+  - appsettings.Development.json
+  - launchSettings.json
+
+These files caused failures during:
 - aspire do publish
-- aspire do deploy
-- aspire do <step-name>
+- CI pipelines
 
-Pipelines allow:
-- Dependency-aware execution
-- Running only specific steps (e.g., migrations)
-- CI-friendly workflows
+Removing them fixed publishing issues.
 
-Do NOT rely on legacy publish callbacks.
+--------------------------------------------------------------------
 
-======================================================================
+DOCKER + DEPLOYMENT
 
-DOCKER COMPOSE + CI PATTERNS
+DOCKER COMPOSE ENVIRONMENT
 
-Common AppHost pattern when generating Docker artifacts:
+When generating Docker Compose output, add to AppHost:
 
-    builder.AddDockerComposeEnvironment("env");
+builder.AddDockerComposeEnvironment("env");
 
-Generated output:
-- aspire-output/
+GENERATED OUTPUT
 
-Best practices:
-- Add aspire-output/ to .gitignore
-- Treat generated docker-compose.yaml as a build artifact
-- CI can upload aspire-output/docker-compose.yaml for deployment
+- Aspire writes deployment artifacts to:
+  - aspire-output/
+- This folder should:
+  - be gitignored
+  - optionally be uploaded as a CI artifact
 
-This pattern is used successfully in todojsaspire.
+CI PATTERN (REAL WORLD)
 
-======================================================================
+- Run:
+  - aspire do deploy (or aspire deploy fallback)
+- Publish:
+  - aspire-output/docker-compose.yaml
 
-JAVASCRIPT / VITE HOSTING NOTES
+--------------------------------------------------------------------
 
-- Aspire.Hosting.NodeJs was renamed to Aspire.Hosting.JavaScript.
-- AddViteApp(...) is the preferred API for Vite projects.
-- Frontends usually need WithExternalHttpEndpoints() so they are reachable
-  from a browser during local development.
+ASPIRE CLI & PIPELINES
 
-======================================================================
+LOCAL DEVELOPMENT
 
-LLM DO / DO NOT CHECKLIST
+- aspire run
+  - Runs the app locally
+  - Opens the Aspire dashboard
 
-DO:
-- Prefer file-based AppHosts
-- Use WithReference(...) instead of hardcoded config
-- Match database resource names exactly
-- Use aspire do pipelines for build/publish/deploy
-- Keep migration services minimal
+PIPELINES (ASPIRE 13)
 
-DO NOT:
-- Assume Aspire is .NET-only
-- Assume AppHosts must use .csproj
-- Hardcode connection strings
-- Keep stray appsettings.json files in migration services
-- Use pre–Aspire 13 publish patterns
+- aspire do introduces pipeline-based execution.
+- Pipelines can:
+  - build
+  - publish
+  - deploy
+  - run migrations
+- Steps can be executed independently.
 
-======================================================================
+Do NOT assume Aspire 9.x publishing behavior still applies.
 
-END OF FILE
+--------------------------------------------------------------------
+
+LLM DO / DO NOT RULES (STRICT)
+
+DO
+- Assume Visual Studio is used
+- Default to project-based AppHost
+- Use references instead of manual configuration
+- Use a dedicated MigrationService
+- Follow resource naming consistently
+- Use AddViteApp for Vite frontends
+- Use AddSqlServerDbContext for EF Core
+
+DO NOT
+- Do NOT default to single-file AppHost
+- Do NOT hardcode connection strings
+- Do NOT manually wire services via env vars
+- Do NOT mix migration logic into APIs
+- Do NOT add config files to MigrationService
+- Do NOT assume older Aspire docs apply
+
+--------------------------------------------------------------------
+
+SUMMARY RULE
+
+Aspire 13 is opinionated.
+Follow its conventions instead of fighting them.
+
+When in doubt, prefer:
+- project-based AppHost
+- references over configuration
+- explicit services over clever shortcuts
+
+This file overrides generic LLM knowledge.
