@@ -23,9 +23,8 @@ The tool should:
 
 ### 0) Memory (required, first)
 Before planning or coding:
-
 1. Read all files under `.\github\memories\**\*.*` (treat `*.md` / `*.txt` as primary) if they exist.
-2. Extract any relevant lessons (Aspire patterns, EF migration gotchas, TraceEvent quirks, privileges, commands, etc.)
+2. Extract relevant lessons (Aspire patterns, EF migration gotchas, TraceEvent quirks, privileges, commands, etc.)
 3. Use those lessons to improve the plan and implementation.
 
 ### 0b) Memory writing (required, continuous)
@@ -40,24 +39,23 @@ Rules:
 - Append as you go; do not wait until the end.
 - Keep entries concise and actionable.
 
-The session memory file must include:
+Session memory file must include:
 - Date/time + short summary of session goal
 - What worked / what didn’t
-- Verification commands used (`dotnet build`, `dotnet test`, migrations commands, run commands, etc.)
+- Verification commands used (`dotnet build`, `dotnet test`, migrations, run commands, etc.)
 - Key decisions (ETW provider choices, fallback behavior, batching strategy)
 - Fixes and root cause
 
 ---
 
 ## REQUIRED WORKFLOW (Plan → Implement → Verify → Iterate)
-You MUST follow this workflow:
-
+You MUST:
 1. Create a step-by-step plan with checkboxes.
 2. Implement step-by-step; complete a step before moving on.
-3. For every verifiable step, verify it (build, run, migrations, tests, etc.).
+3. Verify every verifiable step (build/run/migrations/tests).
 4. If verification fails, fix and re-verify before continuing.
-5. Keep the plan updated as you learn; do not skip verification.
-6. As you execute, write novel learnings to the session memory file (above).
+5. Update the plan as you learn; do not skip verification.
+6. Write novel learnings to the session memory file as you go.
 
 No TODOs. Produce working code.
 
@@ -65,20 +63,31 @@ No TODOs. Produce working code.
 
 ## UI + CLI REQUIREMENTS (IMPORTANT)
 ### Argument parsing
-- Use **System.CommandLine** (the official .NET command-line library that ships with .NET tooling ecosystem).  
+- Use **System.CommandLine** for command/option parsing.
 - Do NOT use Spectre.Console.Cli.
-- Implement `procwatch` with a `monitor` command and options as specified below.
 
 ### Interactive console UI
-- Use **Spectre.Console** for all console rendering.
-- The CLI UI must look **polished**:
-  - Use a live layout (e.g., `AnsiConsole.Live(...)`), panels, tables, and status indicators.
+- Use **Spectre.Console** for all console rendering (https://spectreconsole.net/).
+- The CLI UI must look polished:
+  - Use live layout (`AnsiConsole.Live(...)`), panels, tables, status indicators.
   - Redraw in place (no scrolling spam).
-  - Show clear headings, aligned columns, and compact sections.
-  - Show a footer hint: “Press Ctrl+C to stop”.
-- The UI should keep updating every interval (default 1s) with current aggregate stats + event counters + last event.
+  - Footer hint: “Press Ctrl+C to stop”.
+- UI updates every interval (default 1s) with aggregate stats + counters + last event.
 
-Reference: https://spectreconsole.net/
+---
+
+## CRITICAL Aspire 13 Database Integration Rule
+When any app/service needs to connect to the database, **do NOT use a raw connection string directly** (no `UseSqlite("...")` with a string read manually from config in the consumer).
+
+Instead, wire the database and DbContext the **Aspire 13 way shown in the referenced repo**:
+- Define/configure the database resource in `ProcWatch.AppHost` using Aspire patterns (like the sample repo).
+- In consuming projects (`ProcWatch.MonitorService`), register the DbContext using Aspire-style helpers/extensions (the same pattern as in `todojsaspire`), so the connection information flows via Aspire service discovery/configuration.
+- The consumer should call the Aspire-provided `AddDbContext`/`AddSqliteDbContext`-style registration and rely on Aspire configuration binding, not hard-coded connection strings.
+
+Follow the exact conventions from the referenced repo for:
+- resource definition in AppHost
+- adding the DbContext in the service project
+- how migrations are applied using MigrationService
 
 ---
 
@@ -109,6 +118,10 @@ Rules:
 - Default `--interval-ms` = `1000`.
 - If `--db` omitted, default: `procwatch-<pid>-<yyyyMMdd-HHmmss>.sqlite` in current directory.
 
+**Important:** even though CLI accepts `--db <path>`, the actual DbContext wiring must still follow Aspire patterns. That means:
+- The CLI passes the DB path into Aspire/AppHost configuration (e.g., as resource parameter/config value) and AppHost uses it when defining the SQLite resource.
+- The service consumes the DbContext via Aspire registration, not by building a connection string itself.
+
 Ctrl+C:
 - Stop ETW session cleanly, stop timers, flush EF/DB writes, print summary counts + DB path.
 - If `--no-console`, do not render the UI, but still log/persist.
@@ -121,40 +134,40 @@ Use EF Core + SQLite.
 ### EF requirements
 - Implement `ProcWatchDbContext`.
 - Implement EF migrations.
-- Apply migrations at startup via a **MigrationService** patterned after the referenced repo (same concept/style).
+- Apply migrations at startup via a **MigrationService** patterned after the referenced repo.
 - DB is append-only.
 
 ### Schema guidance
 Use tables like:
 - `MonitoredSession` (SessionId GUID, StartTime, TargetPid, TargetProcessName, IncludeChildren, ArgsJson)
 - `ProcessInstance` (Id, SessionId, Pid, ParentPid, ProcessName, StartTime, EndTime nullable)
-- `EventRecord` (Id, SessionId, Pid, ProcessName, Timestamp, Type, Op, JsonPayload, plus queryable columns like Path/Endpoints as needed)
+- `EventRecord` (Id, SessionId, Pid, ProcessName, Timestamp, Type, Op, JsonPayload, plus queryable columns like Path/Endpoints)
 - `StatsSample` (Id, SessionId, Pid, Timestamp, CpuPct, WorkingSetBytes, PrivateBytes, HandleCount, ThreadCount)
 
-Store type-specific payload in `JsonPayload` (System.Text.Json) but also keep key query columns where useful.
+Store type-specific payload in `JsonPayload` (System.Text.Json) and keep key query columns where useful.
 
 Performance:
-- Use a bounded Channel queue and a single writer loop.
-- Batch inserts; keep EF overhead low (temporary `AutoDetectChangesEnabled=false` in batching scope).
+- Use bounded Channel queue + single writer loop.
+- Batch inserts; reduce EF overhead (temporary `AutoDetectChangesEnabled=false` within batching scope).
 
 ---
 
 ## Monitoring implementation (Windows-only)
 ### Primary mechanism: ETW (TraceEvent)
 Use `Microsoft.Diagnostics.Tracing.TraceEvent` to capture:
-- File I/O events
+- File I/O
 - Registry operations
 - Image loads (DLL/EXE)
 - Network events (prefer ETW if viable)
 
 ### Network fallback
 If ETW network capture isn’t viable:
-- Periodically snapshot connections for monitored PIDs (IPHelper / `System.Net.NetworkInformation`) and log diffs.
+- Snapshot connections for monitored PIDs and log diffs.
 - Label fallback records with `Source="Snapshot"`.
 
 ### Process + children tracking
 - Monitor target PID and descendants by default.
-- Maintain set of active PIDs (WMI/CIM `Win32_Process` or Toolhelp snapshots); update periodically and/or on process start events.
+- Maintain set of active PIDs (WMI/CIM `Win32_Process` or Toolhelp snapshot); update periodically and/or on process start events.
 - If root exits, continue until all tracked PIDs exit (document behavior).
 
 ### Stats sampling
@@ -167,7 +180,7 @@ Every `interval-ms`:
 ## Robustness & permissions
 - If ETW requires elevation and fails:
   - Continue in “stats + snapshot network” mode
-  - Record a `system` EventRecord explaining the limitation
+  - Record a `system` EventRecord describing the limitation
 - Handle PID not found, early exit, invalid DB path, ETW session conflicts (unique session name).
 
 ---
@@ -192,6 +205,7 @@ Produce a complete working repo that:
 - Runs via Aspire AppHost
 - CLI uses System.CommandLine for parsing and Spectre.Console for UI
 - EF migrations exist and are applied via MigrationService
+- DbContext wiring follows Aspire patterns (no direct raw connection string usage in consumers)
 - Works on Windows 11+ (document minimum)
 
 Include README with setup/run examples and limitations.
@@ -218,4 +232,5 @@ Include README with setup/run examples and limitations.
 - [ ] Ctrl+C stops cleanly and prints summary
 - [ ] Child processes monitored by default; `--no-children` works
 - [ ] EF migrations exist and applied via MigrationService
+- [ ] DbContext is configured using Aspire 13 patterns from referenced repo (no direct connection string usage in consumer)
 - [ ] `dotnet build` succeeds; app runs without runtime errors; tests pass
