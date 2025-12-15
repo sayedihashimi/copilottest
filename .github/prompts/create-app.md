@@ -1,46 +1,22 @@
-# ProcWatch (Windows-only) — Copilot Prompt (Aspire 13 + .NET 10 + React Dashboard)
+# ProcWatch (Windows-only) — Copilot Prompt (Aspire 13 + .NET 10)
 
-You are an expert Windows/.NET engineer. Build a **Windows-only** monitoring tool named **ProcWatch** using **.NET 10** and **Aspire 13**, and ALSO build a **React web app** (Aspire-configured) that can browse previously generated ProcWatch SQLite databases.
-
-Use Aspire 13 sample solution structure/patterns from:
+You are an expert Windows/.NET engineer. Build a **Windows-only** monitoring tool named **ProcWatch** using **.NET 10** and **Aspire 13**. Use the Aspire 13 sample solution structure/patterns from:
 - Repo reference: https://github.com/sayedihashimi/todojsaspire
 - Aspire docs: https://aspire.dev/
 
-**Additional Aspire guidance file (required):**
-- If a file exists at `.github\aspire13.md`, load it and follow its Aspire guidance and best practices.
+This tool monitors a target process (and **child processes by default**) and captures:
+- **File** reads/writes
+- **Network** activity
+- **CPU/memory/handles/threads** stats
+- **Registry** read/write
+- **DLL/module loads**
 
----
-
-## What to build
-
-### 1) ProcWatch process monitoring
-Monitor a target process (and **child processes by default**) and capture:
-- File reads/writes
-- Network activity
-- CPU/memory/handles/threads stats
-- Registry read/write
-- DLL/module loads
-
-Runtime UX:
-- Polished live console dashboard
-- Interactive event browser view that supports keyboard navigation and scrolling historical events
-- Stop gracefully on Ctrl+C
-- Persist everything to SQLite via EF Core + migrations + MigrationService (Aspire pattern)
-
-### 2) React web dashboard (Aspire configured)
-Create a React web app that:
-- Lists **previously generated ProcWatch `.sqlite` files** (from a configured directory)
-- Allows user to select a DB file
-- Opens the selected DB (server-side) and enables user to **view/search/filter** the contents:
-  - sessions
-  - processes
-  - events (by type/op/path/pid/time range)
-  - stats samples (graphs optional; table required)
-- Must follow **Aspire 13 best practices** for configuration/service wiring.
-
-Security note:
-- Treat DB browsing as local/dev tool (no multi-tenant auth needed unless requested).
-- Do not allow arbitrary path traversal; only allow selection from the known directory list.
+The tool should:
+- Start monitoring and keep running in the foreground
+- Update a **polished live console dashboard**
+- Support **interactive navigation to browse historical events**
+- Stop on **Ctrl+C** gracefully
+- Persist everything to **SQLite** using **EF Core**, including **EF migrations** and a **MigrationService** patterned after the referenced solution
 
 ---
 
@@ -78,7 +54,7 @@ Each session memory should include:
 You MUST:
 1. Create a step-by-step plan with checkboxes.
 2. Implement one step at a time.
-3. Verify every verifiable step (`dotnet build`, `dotnet test`, run app(s), migrations apply, etc.).
+3. **Verify every verifiable step** (`dotnet build`, `dotnet test`, run app, migrations apply, etc.).
 4. If verification fails, fix and re-verify before proceeding.
 5. Update the plan as new information is learned.
 6. Persist all novel learnings to Memorizer.
@@ -91,12 +67,12 @@ No TODOs. No placeholders. Produce working, complete code.
 
 ### Argument parsing
 - Use **System.CommandLine** for all CLI parsing.
-- Support `--help` out of the box via System.CommandLine.
+- Support `--help` **out of the box** via System.CommandLine.
 - No ad-hoc or temporary parsers.
 - Do NOT use Spectre.Console.Cli.
 
 Commands/options:
-- Root: `procwatch`
+- Root command: `procwatch`
 - Subcommand: `monitor`
 - Options:
   - `--pid <int>`
@@ -108,107 +84,89 @@ Commands/options:
   - `--no-children`
   - `--help` (automatic)
 
-Behavior:
+Behavior rules:
 - `--pid` overrides `--process`
-- If multiple processes match, pick the newest
+- If multiple processes match `--process`, pick the newest
 - Child processes monitored by default
 
-### Spectre.Console UX (live + interactive)
-- Use Spectre.Console (https://spectreconsole.net/)
-- Live dashboard with panels/tables; redraw-in-place
-- Event browser mode:
-  - Press `E` to open
-  - Scroll with ↑/↓, PgUp/PgDn, Home/End
-  - `Esc` to return
-- Ingestion must continue while browsing (no blocking).
+---
+
+## Spectre.Console UX (LIVE + INTERACTIVE)
+
+### Live dashboard (default view)
+Use **Spectre.Console** to render a polished, continuously updating dashboard:
+- Implement with `AnsiConsole.Live(...)`
+- Redraw in place (no scrolling spam)
+- Panels / tables for:
+  - Target process + uptime
+  - Aggregate CPU %, memory, handles, threads
+  - Event counters by type (file/net/registry/module)
+  - Recent events preview (last N events, e.g. 10–20)
+
+Footer hints (always visible):
+- `Ctrl+C` → Stop and exit
+- `E` → View all events
+- `↑/↓` or `PgUp/PgDn` → Scroll (when applicable)
+- `Esc` → Return to dashboard
+
+### Event browser mode (REQUIRED)
+Implement an interactive event browser:
+- Press `E` to switch dashboard → event browser.
+- Display a scrollable list/table of events:
+  - Timestamp, PID/process, Type, Op, key details (path/endpoint/dll/etc.)
+- Navigation:
+  - `↑/↓` scroll
+  - `PgUp/PgDn` page
+  - `Home/End` oldest/newest
+- `Esc` returns to dashboard.
+- Ingestion continues while browsing (no blocking).
+
+Data source:
+- Back event browser with an in-memory ring buffer and/or SQLite queries (SQLite preferred for large histories).
+- Keep UI responsive; do not block ingestion.
+
+Implementation guidance:
+- Use a UI state machine: `Dashboard` and `EventBrowser`.
+- Separate rendering from ingestion state.
 
 ---
 
 ## CRITICAL Aspire 13 Database Integration Rule
-When any service needs database access:
+When any app/service needs database access:
 
 ❌ Do NOT use raw connection strings directly  
-❌ Do NOT call `UseSqlite("...")` in consumers  
+❌ Do NOT call `UseSqlite("...")` with hard-coded or manually constructed strings  
 
 ✅ Follow the **Aspire 13 pattern from the referenced repo**:
-- Define the DB resource(s) in `AppHost`
-- Register DbContext using Aspire helpers/extensions
-- Apply migrations via `MigrationService`
+- Define SQLite resource in `ProcWatch.AppHost`
+- Pass DB parameters (like file path) via AppHost configuration
+- Register DbContext in consuming services using Aspire helpers/extensions
+- Apply migrations via `MigrationService` (patterned after `todojsaspire`)
 
 Even though CLI accepts `--db <path>`:
-- CLI passes that value into AppHost/configuration
-- Consumer services never construct their own connection strings
+- The CLI passes this value into AppHost configuration
+- Consumer services never build connection strings themselves
 
 ---
 
 ## Solution shape (Aspire 13)
-Create an Aspire solution that includes:
-- `ProcWatch.AppHost` (Aspire)
-- `ProcWatch.ServiceDefaults`
-- `ProcWatch.MonitorService` (worker/service: ETW + stats + persistence)
+Create an Aspire solution similar to the referenced repo:
+- `ProcWatch.AppHost` (Aspire App Host)
+- `ProcWatch.ServiceDefaults` (standard Aspire defaults)
+- `ProcWatch.MonitorService` (worker/service: ETW + stats sampling + persistence)
 - `ProcWatch.Cli` (System.CommandLine + Spectre.Console UI)
-- `ProcWatch.ApiService` (NEW: ASP.NET Core Minimal API that exposes read-only endpoints for browsing DBs)
-- `ProcWatch.Web` (NEW: React app; Aspire configured; talks to ApiService)
 
-Follow patterns from `todojsaspire` and `.github\aspire13.md` if present.
-
----
-
-## React web app requirements (Aspire configured)
-### Architecture
-- React app is a separate project (`ProcWatch.Web`) and is wired into Aspire AppHost.
-- Backend browsing is done via `ProcWatch.ApiService` (ASP.NET Core Minimal API).
-- React app calls ApiService endpoints.
-
-### DB discovery
-- ProcWatch CLI writes SQLite files into a directory.
-- The web app must show the user a list of generated `.sqlite` files from a configured directory.
-- Use configuration (Aspire) to provide the directory path to the ApiService, e.g.:
-  - `ProcWatch:DbDirectory` (or similar)
-- ApiService endpoint `GET /api/dbs` returns list of DB files with safe metadata:
-  - file name, full id token (not raw path), size, last modified
-
-### DB selection / access
-- React selects a DB by an **ID token** returned from the server (not arbitrary path).
-- ApiService maps token → file path from the allowed directory and opens it read-only.
-- Use EF Core (or direct SQLite query) **read-only** against the selected DB.
-- Provide endpoints:
-  - `GET /api/dbs`
-  - `GET /api/dbs/{id}/sessions`
-  - `GET /api/dbs/{id}/processes`
-  - `GET /api/dbs/{id}/events` with query params:
-    - `type`, `op`, `pid`, `contains` (search in payload/path), `from`, `to`, `page`, `pageSize`, `sort`
-  - `GET /api/dbs/{id}/stats` with query params:
-    - `pid`, `from`, `to`, `page`, `pageSize`
-- Implement pagination everywhere.
-
-### React UX
-- Nice UI with:
-  - DB picker page
-  - Tabs: Sessions, Processes, Events, Stats
-  - Events page supports:
-    - search box
-    - filters (type/op/pid/date range)
-    - paging
-    - details panel for selected event (show JsonPayload pretty-printed)
-- Use best practices:
-  - fetch wrapper + error handling
-  - loading states
-  - debounce search input
-  - keep URL query params in sync (optional but preferred)
-
-### Aspire integration best practices
-- Use Aspire configuration/service discovery for ApiService base URL.
-- In AppHost, wire Web → ApiService reference appropriately.
-- Avoid hard-coded ports; let Aspire assign.
+Follow conventions from the sample repo (hosting, configuration, DI, logging, health checks).
 
 ---
 
 ## Data persistence (SQLite + EF Core + Migrations)
-For ProcWatch capture DB:
+Use EF Core + SQLite.
+
+Requirements:
 - Append-only schema
 - Batched inserts via Channel
-- EF migrations applied at startup via `MigrationService`
+- EF migrations exist and are applied at startup via **MigrationService** patterned after `todojsaspire`
 
 Tables:
 - `MonitoredSession`
@@ -216,28 +174,42 @@ Tables:
 - `EventRecord`
 - `StatsSample`
 
-For ApiService reading:
-- Open selected DB **read-only**
-- Avoid migrations/changes on existing capture DBs (do not apply migrations to historical DBs; treat them as immutable).
-
 ---
 
 ## Monitoring implementation (Windows-only)
-- Primary: ETW via `Microsoft.Diagnostics.Tracing.TraceEvent`
-- Capture: file, registry, image load, network
-- Network fallback: snapshot connections
-- Track child processes via WMI/Toolhelp
-- Stats sampled every interval
+- Primary mechanism: ETW via `Microsoft.Diagnostics.Tracing.TraceEvent`
+- Capture: file I/O, registry ops, image loads, network activity (ETW if viable)
+- Network fallback: periodic snapshot connections and log diffs if ETW net capture isn’t viable
+- Track child processes via WMI/Toolhelp; include descendants by default
+- Stats sampled every interval; aggregate for UI
 
 ---
 
-## CI (GitHub Actions) — SUPPORTED
+## Robustness & permissions
+- If ETW requires elevation and fails:
+  - Continue in “stats + snapshot network” mode
+  - Record a `system` EventRecord describing the limitation
+- Handle PID not found, early exit, invalid DB path, ETW session conflicts (unique session name).
+
+---
+
+## CI (GitHub Actions) — ALSO SUPPORTED BY THIS PROMPT
+This prompt must also handle requests like:
+
+> “Add a GitHub Actions file that will run on each CI build. It should download the latest version of dotnet 10, do a build and run tests.
+> Use the github actions file linked below as a sample. For this solution exclude the Aspire related content
+> https://raw.githubusercontent.com/sayedihashimi/todojsaspire/refs/heads/main/.github/workflows/build.yml”
+
 When asked to add CI:
-- Add `.github/workflows/build.yml`
+- Create/update `.github/workflows/build.yml`
 - Trigger on `push` and `pull_request`
-- Install latest .NET 10
-- Run: restore, build Release, test Release
-- Exclude Aspire-specific workflow content from referenced sample unless explicitly required
+- Use `actions/setup-dotnet` to install **latest .NET 10**
+- Run:
+  - `dotnet --info`
+  - `dotnet restore`
+  - `dotnet build -c Release`
+  - `dotnet test -c Release --no-build`
+- Exclude Aspire-specific workflow content from the referenced sample
 - Verify locally before finalizing
 - Persist CI learnings to Memorizer
 
@@ -246,28 +218,27 @@ When asked to add CI:
 ## Deliverables
 Produce a complete working repo that:
 - Builds with `dotnet build`
-- Runs via Aspire AppHost (MonitorService + ApiService + React Web + optional CLI)
-- CLI uses System.CommandLine + Spectre.Console (live + event browser)
-- Uses Aspire-style DbContext wiring and MigrationService for the capture DB
-- React Web can list/select/browse historical `.sqlite` capture DBs via ApiService
+- Runs via Aspire AppHost
+- CLI uses System.CommandLine (with built-in `--help`) + Spectre.Console (live + event browser)
+- Uses Aspire-style DbContext wiring (no raw connection strings in consumers)
+- Uses EF migrations + MigrationService pattern
+- Includes CI workflow when requested
 - Works on Windows 11+
 
-Include README:
-- How to run AppHost
-- How to run CLI monitoring
-- Where DB files are stored
-- How web UI discovers DBs and browses data
-- Limitations (ETW privilege, network fallback, etc.)
+Include `README.md` with:
+- Setup/run commands
+- Example usage
+- Notes about elevation/limitations
+- How to browse events in the UI (Dashboard vs Event Browser)
 
 ---
 
 ## Acceptance checklist
-- [ ] `.github\aspire13.md` loaded if present and followed
 - [ ] Existing memories loaded via Memorizer; new ones persisted
 - [ ] Step-by-step plan created and followed; each verifiable step verified
 - [ ] `procwatch monitor --help` works via System.CommandLine
 - [ ] Polished Spectre.Console dashboard + event browser with scrolling
 - [ ] Capture DB created via EF Core + migrations + MigrationService (Aspire pattern)
-- [ ] Aspire AppHost runs MonitorService + ApiService + React Web
-- [ ] Web app lists historical `.sqlite` files, allows selecting one, and browsing/searching/filtering data
+- [ ] Child processes monitored by default; `--no-children` works
 - [ ] `dotnet build` and `dotnet test` succeed
+- [ ] CI workflow added when requested (non-Aspire-specific) and builds/tests with .NET 10
