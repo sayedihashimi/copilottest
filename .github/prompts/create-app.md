@@ -81,13 +81,11 @@ When any app/service needs to connect to the database, **do NOT use a raw connec
 
 Instead, wire the database and DbContext the **Aspire 13 way shown in the referenced repo**:
 - Define/configure the database resource in `ProcWatch.AppHost` using Aspire patterns (like the sample repo).
-- In consuming projects (`ProcWatch.MonitorService`), register the DbContext using Aspire-style helpers/extensions (the same pattern as in `todojsaspire`), so the connection information flows via Aspire service discovery/configuration.
-- The consumer should call the Aspire-provided `AddDbContext`/`AddSqliteDbContext`-style registration and rely on Aspire configuration binding, not hard-coded connection strings.
-
-Follow the exact conventions from the referenced repo for:
-- resource definition in AppHost
-- adding the DbContext in the service project
-- how migrations are applied using MigrationService
+- In consuming projects (`ProcWatch.MonitorService`), register the DbContext using Aspire-style helpers/extensions (the same pattern as in `todojsaspire`), so connection info flows via Aspire configuration/service discovery.
+- Follow the referenced repo conventions for:
+  - resource definition in AppHost
+  - adding the DbContext in the service project
+  - applying migrations via MigrationService
 
 ---
 
@@ -118,9 +116,9 @@ Rules:
 - Default `--interval-ms` = `1000`.
 - If `--db` omitted, default: `procwatch-<pid>-<yyyyMMdd-HHmmss>.sqlite` in current directory.
 
-**Important:** even though CLI accepts `--db <path>`, the actual DbContext wiring must still follow Aspire patterns. That means:
-- The CLI passes the DB path into Aspire/AppHost configuration (e.g., as resource parameter/config value) and AppHost uses it when defining the SQLite resource.
-- The service consumes the DbContext via Aspire registration, not by building a connection string itself.
+**Important:** even though CLI accepts `--db <path>`, DbContext wiring must still follow Aspire patterns. That means:
+- CLI passes DB path into Aspire/AppHost configuration (e.g., as resource parameter/config value) and AppHost uses it when defining the SQLite resource.
+- Service consumes the DbContext via Aspire registration, not by constructing a connection string itself.
 
 Ctrl+C:
 - Stop ETW session cleanly, stop timers, flush EF/DB writes, print summary counts + DB path.
@@ -185,6 +183,38 @@ Every `interval-ms`:
 
 ---
 
+## CI (GitHub Actions) — ALSO SUPPORTED BY THIS PROMPT
+This prompt must also handle requests like:
+
+> “Add a GitHub Actions file that will run on each CI build. It should download the latest version of dotnet 10, do a build and run tests. Use the GitHub Actions file linked below as a sample. For this solution exclude the Aspire related content  
+> https://raw.githubusercontent.com/sayedihashimi/todojsaspire/refs/heads/main/.github/workflows/build.yml”
+
+### CI requirements
+When asked to add CI:
+- Create/update `.github/workflows/build.yml`
+- Trigger on:
+  - `push` (at least `main`)
+  - `pull_request`
+- Use `actions/setup-dotnet` to install **.NET 10 (latest patch)**.
+- Run:
+  - `dotnet --info`
+  - `dotnet restore`
+  - `dotnet build -c Release`
+  - `dotnet test -c Release --no-build`
+- Exclude Aspire-specific steps/content from the referenced sample (do not add Aspire workload install steps unless explicitly required; do not run AppHost-specific smoke checks unless requested).
+- Ensure the workflow works for a multi-project solution and runs tests for all test projects.
+
+Verification:
+- After adding the workflow, verify locally that:
+  - `dotnet build -c Release`
+  - `dotnet test -c Release`
+  succeed.
+- If repository includes no tests yet, still run `dotnet test` (it should succeed and report 0 tests).
+
+Record any CI-related gotchas in the session memory file.
+
+---
+
 ## Code organization (recommended)
 - `EtwMonitor`
 - `ProcessTreeTracker`
@@ -206,7 +236,7 @@ Produce a complete working repo that:
 - CLI uses System.CommandLine for parsing and Spectre.Console for UI
 - EF migrations exist and are applied via MigrationService
 - DbContext wiring follows Aspire patterns (no direct raw connection string usage in consumers)
-- Works on Windows 11+ (document minimum)
+- When requested, includes GitHub Actions CI workflow (non-Aspire-specific) that builds and tests with latest .NET 10
 
 Include README with setup/run examples and limitations.
 
@@ -232,5 +262,6 @@ Include README with setup/run examples and limitations.
 - [ ] Ctrl+C stops cleanly and prints summary
 - [ ] Child processes monitored by default; `--no-children` works
 - [ ] EF migrations exist and applied via MigrationService
-- [ ] DbContext is configured using Aspire 13 patterns from referenced repo (no direct connection string usage in consumer)
+- [ ] DbContext is configured using Aspire 13 patterns (no direct connection string usage in consumer)
+- [ ] If CI requested: `.github/workflows/build.yml` exists, uses latest .NET 10, builds + tests, and excludes Aspire-specific content
 - [ ] `dotnet build` succeeds; app runs without runtime errors; tests pass
