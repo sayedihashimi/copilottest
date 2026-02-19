@@ -1,0 +1,6 @@
+@ProcWatch.ApiService_HostAddress = http://localhost:5062
+
+GET {{ProcWatch.ApiService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
